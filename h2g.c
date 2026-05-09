@@ -219,6 +219,7 @@ static void
 GoatConvertTracks(void)
 {
   long i, i2, voice, so, b1, wb, addr;
+  int track_done;
 
   GoatTracksMax = 0;
   for (i = 0; i < 256; i++)
@@ -234,8 +235,10 @@ GoatConvertTracks(void)
       GoatTracks[GoatTracksMax][2] = 0xFF;
       GoatTracks[GoatTracksMax][3] = 0;
 
-      if (voice >= SIDRHtrackVoices)
-        goto SkipVoice;
+      if (voice >= SIDRHtrackVoices) {
+        GoatTracksMax++;
+        continue;
+      }
 
       so = voice + (i * (SIDRHtrackVoices * 2));
       addr = (long)SIDfile[SIDRHtrackHi + so] * 256;
@@ -247,13 +250,15 @@ GoatConvertTracks(void)
         sprintf(buf, "*** SUBTUNE $%lX (VOICE $%lX) ADDRESS OUT OF RANGE, CAN'T CONVERT ***",
           i, voice);
         AddTextS(buf);
-        goto SkipVoice;
+        GoatTracksMax++;
+        continue;
       }
 
       i2 = 0;
       GoatTracks[GoatTracksMax][0] = 1;
+      track_done = 0;
 
-      do {
+      while (!track_done) {
         b1 = (long)SIDfile[addr + i2];
         if (GoatTracks[GoatTracksMax][0] >= 254)
           b1 = 0xFF;
@@ -266,7 +271,7 @@ GoatConvertTracks(void)
             GoatTracks[GoatTracksMax][GoatTracks[GoatTracksMax][0]] = 0xFF;
             GoatTracks[GoatTracksMax][GoatTracks[GoatTracksMax][0] + 1] = 0;
             GoatTracks[GoatTracksMax][0] += 2;
-            goto TrackEnd;
+            track_done = 1;
           }
           break;
 
@@ -287,9 +292,9 @@ GoatConvertTracks(void)
             GoatTracks[GoatTracksMax][GoatTracks[GoatTracksMax][0]] = 0xFF;
             GoatTracks[GoatTracksMax][GoatTracks[GoatTracksMax][0] + 1] = 0;
             GoatTracks[GoatTracksMax][0] += 2;
-            goto TrackEnd;
+            track_done = 1;
           }
-          if (b1 <= 0x7F) {
+          if (!track_done && b1 <= 0x7F) {
             GoatTracks[GoatTracksMax][GoatTracks[GoatTracksMax][0]] = b1;
             GoatTracks[GoatTracksMax][0]++;
           }
@@ -301,28 +306,22 @@ GoatConvertTracks(void)
             GoatTracks[GoatTracksMax][GoatTracks[GoatTracksMax][0]] = 0xFF;
             GoatTracks[GoatTracksMax][GoatTracks[GoatTracksMax][0] + 1] = 0xFD;
             GoatTracks[GoatTracksMax][0] += 3;
-            goto TrackEnd;
-          }
-          if (b1 == 0xFF) {
+            track_done = 1;
+          } else if (b1 == 0xFF) {
             GoatTracks[GoatTracksMax][GoatTracks[GoatTracksMax][0]] = 0xFF;
             GoatTracks[GoatTracksMax][GoatTracks[GoatTracksMax][0] + 1] = 0;
             GoatTracks[GoatTracksMax][0] += 3;
-            goto TrackEnd;
-          }
-          if (b1 <= 0xFD) {
+            track_done = 1;
+          } else if (b1 <= 0xFD) {
             GoatTracks[GoatTracksMax][GoatTracks[GoatTracksMax][0]] = b1;
             GoatTracks[GoatTracksMax][0]++;
           }
           break;
 
         default:
-          goto TrackEnd;
+          track_done = 1;
         }
-      } while (1);
-
-TrackEnd:
-      ;
-SkipVoice:
+      }
       GoatTracksMax++;
     }
   }
@@ -403,7 +402,7 @@ GoatConvertPattern(void)
           sprintf(buf, "*** PATTERN $%lX ADDRESS OUT OF RANGE, CAN'T CONVERT ***", i);
           AddTextS(buf);
         }
-        goto SkipVoice;
+        break;
       }
 
       gNoteNr = gTNoNote;
@@ -499,8 +498,6 @@ GoatConvertPattern(void)
 
       i2++;
     } while (1);
-
-SkipVoice:
     i3 = 0;
     i4 = 0;
     for (i2 = 0; i2 <= GoatPLength[i]; i2++) {
@@ -839,32 +836,26 @@ convert_sid(const char *inpath, const char *outpath)
     return -1;
   }
 
+  // read entire file
+  rewind(f);
+  fslen = fread(SIDfile, 1, fslen, f);
+  SIDlength = fslen;
+  fclose(f);
+  f = NULL;
+
   // check "PSID" magic
-  fseek(f, 0, SEEK_SET);
-  b1 = (unsigned char)fgetc(f);
-  fseek(f, 1, SEEK_SET);
-  b2 = (unsigned char)fgetc(f);
-  if (b2 != 'S') goto fileError;
-  {
-    unsigned char b3, b4;
-    fseek(f, 2, SEEK_SET);
-    b3 = (unsigned char)fgetc(f);
-    if (b3 != 'I') goto fileError;
-    fseek(f, 3, SEEK_SET);
-    b4 = (unsigned char)fgetc(f);
-    if (b4 != 'D') goto fileError;
-  }
+  if (SIDfile[0] != 'P' || SIDfile[1] != 'S' || SIDfile[2] != 'I' || SIDfile[3] != 'D')
+    goto fileError;
+
   AddTextS("------------------------------------------------------SID INFO---\r\n");
 
   // SID name
   memset(SIDname, 0, sizeof(SIDname));
-  for (i = 0x17; i <= 0x17 + 0x1F; i++) {
-    fseek(f, i - 1, SEEK_SET);
-    b1 = (unsigned char)fgetc(f);
-    if (b1 != 0) {
+  for (i = 0x16; i <= 0x35; i++) {
+    if (SIDfile[i] != 0) {
       size_t len = strlen(SIDname);
       if (len < sizeof(SIDname) - 1)
-        SIDname[len] = (char)b1;
+        SIDname[len] = (char)SIDfile[i];
     }
   }
   sprintf(txt, "SID Name....: '%s'\r\n", SIDname);
@@ -872,13 +863,11 @@ convert_sid(const char *inpath, const char *outpath)
 
   // author
   memset(SIDauthor, 0, sizeof(SIDauthor));
-  for (i = 0x37; i <= 0x37 + 0x1F; i++) {
-    fseek(f, i - 1, SEEK_SET);
-    b1 = (unsigned char)fgetc(f);
-    if (b1 != 0) {
+  for (i = 0x36; i <= 0x55; i++) {
+    if (SIDfile[i] != 0) {
       size_t len = strlen(SIDauthor);
       if (len < sizeof(SIDauthor) - 1)
-        SIDauthor[len] = (char)b1;
+        SIDauthor[len] = (char)SIDfile[i];
     }
   }
   sprintf(txt, "SID Author..: '%s'\r\n", SIDauthor);
@@ -886,41 +875,28 @@ convert_sid(const char *inpath, const char *outpath)
 
   // released
   memset(SIDreleased, 0, sizeof(SIDreleased));
-  for (i = 0x57; i <= 0x57 + 0x1F; i++) {
-    fseek(f, i - 1, SEEK_SET);
-    b1 = (unsigned char)fgetc(f);
-    if (b1 != 0) {
+  for (i = 0x56; i <= 0x75; i++) {
+    if (SIDfile[i] != 0) {
       size_t len = strlen(SIDreleased);
       if (len < sizeof(SIDreleased) - 1)
-        SIDreleased[len] = (char)b1;
+        SIDreleased[len] = (char)SIDfile[i];
     }
   }
   sprintf(txt, "SID Released: '%s'\r\n", SIDreleased);
   AddTextS(txt);
 
   // load address
-  fseek(f, 0x7D - 1, SEEK_SET);
-  b1 = (unsigned char)fgetc(f);
-  fseek(f, 0x7E - 1, SEEK_SET);
-  b2 = (unsigned char)fgetc(f);
+  b1 = SIDfile[0x7C];
+  b2 = SIDfile[0x7D];
   SIDloadaddr = (long)b2 * 256 + (long)b1;
   sprintf(txt, "SID Loadaddr: $%lX\r\n", SIDloadaddr);
   AddTextS(txt);
 
   // subtunes
-  fseek(f, 0x10 - 1, SEEK_SET);
-  b1 = (unsigned char)fgetc(f);
+  b1 = SIDfile[0x0F];
   SIDsubtunes = (long)b1;
   sprintf(txt, "SID Subtunes: $%lX\r\n", SIDsubtunes);
   AddTextS(txt);
-
-  // read entire file
-  fseek(f, 0, SEEK_SET);
-  for (i = 0; i < fslen; i++)
-    SIDfile[i] = (unsigned char)fgetc(f);
-  SIDlength = fslen;
-  fclose(f);
-  f = NULL;
 
   AddTextS("-----------------------------------------------------SEARCHING---\r\n");
 
