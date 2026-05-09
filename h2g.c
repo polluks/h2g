@@ -1103,7 +1103,7 @@ int main(int argc, char *argv[])
 
     if (argc < 2) {
         fprintf(stderr, "Usage: h2g <input.sid> [output.sng]\n");
-        return 1;
+        return EXIT_FAILURE;
     }
 
     inpath = argv[1];
@@ -1124,5 +1124,7 @@ int main(int argc, char *argv[])
         strcat(outpath, ".sng");
     }
 
-    return convert_sid(inpath, outpath);
+    if (convert_sid(inpath, outpath) != 0)
+        return EXIT_FAILURE;
+    return EXIT_SUCCESS;
 }
