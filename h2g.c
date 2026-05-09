@@ -6,7 +6,7 @@
 // Usage: h2g <input.sid> [output.sng]
 //
 // Copyright (C) 2005  Stilianos Doussis (original VB6)
-// Copyright (C) 2026  Stefan A. Haubenthal (C conversion)
+// Copyright (C) 2026  Stefan A. Haubenthal & Big Pickle (C conversion)
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
